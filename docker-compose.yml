@@ -1,0 +1,92 @@
+services:
+  backend:
+    build:
+      context: ./backend_inventario_ptm
+      dockerfile: Dockerfile
+    image: backend-inventario-ptm
+    container_name: spring-boot-app
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      SPRING_PROFILES_ACTIVE: produccion
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/${MYSQL_DATABASE}?useSSL=false&serverTimezone=UTC&allowPublicKeyRetrieval=true&sslMode=DISABLED
+      SPRING_DATASOURCE_USERNAME: ${MYSQL_USER}
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_PASSWORD}
+      JAVA_OPTS: "-XX:MaxRAM=400m -XX:+UseSerialGC -Xss256k"
+    networks:
+      - app-network-ptm
+    depends_on:
+      mysql:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:8080/actuator/health"]
+      interval: 10s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 450m
+
+  frontend:
+    build:
+      context: ./front_inventario_ptm
+      dockerfile: Dockerfile
+    image: frontend-inventario-ptm
+    container_name: frontend-app
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      REACT_APP_API_URL: http://backend:8080
+    networks:
+      - app-network-ptm
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  mysql:
+    image: mysql:8.0
+    container_name: mysql_container_ptm
+    restart: unless-stopped
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_INNODB_BUFFER_POOL_SIZE: 32M
+      TZ: ${TZ}
+    volumes:
+      - mysql_data_ptm:/var/lib/mysql
+      - ./mysql/conf.d:/etc/mysql/conf.d
+      - /usr/share/zoneinfo:/usr/share/zoneinfo:ro
+    networks:
+      - app-network-ptm
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -uroot -p$${MYSQL_ROOT_PASSWORD} || exit 1"]
+      interval: 20s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    command:
+      - --max_connections=50
+      - --innodb-flush-method=O_DIRECT
+      - --performance-schema=OFF
+      - --default-time-zone=${TZ}
+
+volumes:
+  mysql_data_ptm:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /home/ubuntu/mysql_data_ptm
+
+networks:
+  app-network-ptm:
+    driver: bridge
